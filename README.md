@@ -1,2 +1,0 @@
-# amaysim
-Amaysim Test Automation
