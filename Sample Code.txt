@@ -1,0 +1,741 @@
+import oracle.oats.scripting.modules.basic.api.*;
+
+public class script extends IteratingVUserScript 
+{
+	@ScriptService oracle.oats.scripting.modules.utilities.api.UtilitiesService utilities;
+	@ScriptService oracle.oats.scripting.modules.browser.api.BrowserService browser;
+	@ScriptService oracle.oats.scripting.modules.functionalTest.api.FunctionalTestService ft;
+	@ScriptService oracle.oats.scripting.modules.webdom.api.WebDomService web;
+	@ScriptService oracle.oats.scripting.modules.applet.api.AppletService applet;
+	@ScriptService oracle.oats.scripting.modules.formsFT.api.FormsService forms;
+
+	String sPathWndw = "/web:window[@index='0']";
+	String sPathWarn = "/web:window[@index='0']";
+	String sPathDtls = "/web:window[@index='0']";
+	String sPathDocu = "/web:document[@index='0']";
+	String sPathForm = "/web:form[@index='0']";
+	
+	String sPathWndwDocu = sPathWndw + sPathDocu;
+	String sPathWarnDocu = sPathWarn + sPathDocu;
+	String sPathDtlsDocu = sPathDtls + sPathDocu;
+	
+	String sPathMain = sPathWndwDocu + sPathForm;
+	String sPathDLvl = sPathDtlsDocu + sPathForm;
+	
+	String csvData = "";
+	String sBlank = "";
+	String sTempString = "";
+	String[] sTempArray = new String[1];
+	String[] sAction = {"Add", "Update", "Delete"};
+	String[] sPackageType = {"Single Package", "Package with Lots", "Combined Contracts"};
+	
+	String sTempIteration;
+	
+	int iTemp;
+	int iTempIterationA;
+	int iTempIterationB;
+	
+	float fTemp;
+	
+	public void initialize() throws Exception 
+	{
+		browser.launch();
+		
+		beginStep("[1] Verify Smaller Value Contracts page - GW tab");
+		{
+			// Removed: Verifies UI text
+		}
+		endStep();
+		
+		beginStep("[2] Find Current Page and Row entry");
+		{			
+			iTemp = 10; // assumed max number of Agencies
+			for (iTempIterationA = 1; iTempIterationA < iTemp; iTempIterationA++)
+			{
+				if (web.selectBox(sPathMain + "/web:table[@id='GoodsWorksTab"+String.valueOf(iTempIterationA)+"-nb']/web:select[(@title='Select record set') and multiple mod 'False']").exists()) // go to the last page of an Agency
+				{
+					for (iTempIterationB = 0; iTempIterationB < 10; iTempIterationB++) 
+					{
+						if (!web.selectBox(sPathMain + "/web:table[@id='GoodsWorksTab"+String.valueOf(iTempIterationA)+"-nb']/web:select[(@title='Select record set') and multiple mod 'False']/web:option[@optionIndex='"+String.valueOf(iTempIterationB)+"']").exists())
+						{
+							web.selectBox(sPathMain + "/web:table[@id='GoodsWorksTab"+String.valueOf(iTempIterationA)+"-nb']/web:select[(@title='Select record set') and multiple mod 'False']").selectOptionByIndex(iTempIterationB - 1);
+							web.window(sPathWndw).waitForPage(null);
+							iTempIterationB = 10;
+						}
+					}
+				}
+	
+				if(web.button(sPathMain + "/web:span[@id='GoodsWorksTab"+String.valueOf(iTempIterationA)+"']/web:button[@value='Add Package']").exists()) // count the packages on that page
+				{
+					sTempString = "0";
+					for (iTempIterationB = 0; iTempIterationB < 10; iTempIterationB++) 
+					{
+						if (!web.textBox(sPathMain + "/web:input_text[@id='GoodsWorksTab"+String.valueOf(iTempIterationA)+":UserPackageNumber:"+String.valueOf(iTempIterationB)+"']").exists())
+						{
+							sTempString = String.valueOf(iTempIterationB);
+							iTempIterationB = 10;
+						}
+					}
+					getVariables().set("iRowIteration"+String.valueOf(iTempIterationA), sTempString, Variables.Scope.GLOBAL);
+				}
+				else iTempIterationA = iTemp;
+			}
+			
+			web.button(sPathMain + "/web:button[@id='RevertBtn']").click();
+			web.window(sPathWndw).waitForPage(null);
+		}
+		endStep();
+	}
+
+	/**
+	 * Add code to be executed each iteration for this virtual user.
+	 */
+	public void run() throws Exception 
+	{
+		getDatabank("C05_PRS_FT_SmallerValueContractsGW_Databank").getNextDatabankRecord();
+		
+		String csvAgency = "";
+		String csvAction = "";
+		sTempIteration = "";
+		
+		beginStep("[3] Set Action on Smaller Value Contracts page - Goods and Works tab");
+		{
+			csvAgency = eval("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.Agency}}");
+			sTempString = getVariables().get("iRowIteration"+csvAgency);
+				
+			if (sTempString == null)
+				csvAgency = "1";
+				
+			csvAction = eval("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.Action}}");
+
+			if (sAction[0].equalsIgnoreCase(csvAction)) // Add
+			{
+				web.button(sPathMain + "/web:span[@id='GoodsWorksTab"+csvAgency+"']/web:button[@value='Add Package']").click();
+				web.window(sPathWndw).waitForPage(null);
+				
+				addUpdatePackage(csvAction, csvAgency);
+			}
+			else if (sAction[1].equalsIgnoreCase(csvAction)) // Update
+			{
+				getVariables().set("findPackage", eval("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.Package Number}}"), Variables.Scope.GLOBAL);
+				findPackage(csvAction, csvAgency);
+
+				if (sTempIteration.equals(""))
+				{
+					csvAction = "Add";
+					web.button(sPathMain + "/web:span[@id='GoodsWorksTab"+csvAgency+"']/web:button[@value='Add Package']").click();
+					web.window(sPathWndw).waitForPage(null);
+				}
+				
+				addUpdatePackage(csvAction, csvAgency);
+			}
+			else if (sAction[2].equalsIgnoreCase(csvAction)) // Delete
+			{
+				getVariables().set("findPackage", eval("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.Package Number}}"), Variables.Scope.GLOBAL);
+				findPackage(csvAction, csvAgency);
+				
+				if (!sTempIteration.equals(""))
+					deletePackage(csvAgency);
+			}
+		}
+		endStep();
+	}
+	
+	public void addUpdatePackage(String csvAction, String csvAgency) throws Exception
+	{
+		String strOriginalIteration = "";
+		Boolean bWithError = false;
+		String[] strOldPKType = new String[1];
+		String[] strOldReview = new String[1];
+
+		int iPackageType = 0;
+		
+		beginStep("[4] Input Package Number");
+		{
+			web.textBox(sPathMain + "/web:input_text[@id='GoodsWorksTab"+csvAgency+":UserPackageNumber:{{iRowIteration"+csvAgency+"}}']")
+			.setText("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.Package Number}}");
+		}
+		endStep();
+		
+		beginStep("[5] Select Type");
+		{
+			csvData = eval("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.Type}}");
+			if (!sBlank.equals(csvData) && web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":Type:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']/web:option[@text='"+csvData+"']").exists())
+			{
+				sTempArray = web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":Type:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").getSelectedText();
+				if (sTempArray[0] == null || !sTempArray[0].equals(csvData))
+				{
+					web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":Type:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").selectOptionByText(csvData);
+					web.window(sPathWndw).waitForPage(null);
+				}
+			}
+		}
+		endStep();
+		
+		beginStep("[6] Input Description", 0);
+		{
+			csvData = eval("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.General Description}}");
+			sTempString = web.textBox(sPathMain + "/web:input_text[@id='GoodsWorksTab"+csvAgency+":GeneralDescription:{{iRowIteration"+csvAgency+"}}']").getAttribute("value");
+			
+			if (sTempString == null || !sTempString.equals(csvData))
+				web.textBox(sPathMain + "/web:input_text[@id='GoodsWorksTab"+csvAgency+":GeneralDescription:{{iRowIteration"+csvAgency+"}}']").setText(csvData);
+		}
+		endStep();
+
+		beginStep("[7] Input Estimated Value");
+		{
+			if (web.textBox(sPathMain + "/web:input_text[@id='GoodsWorksTab"+csvAgency+":CalcActiveValueCol2:{{iRowIteration"+csvAgency+"}}']").exists())
+			{
+				csvData = eval("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.Estimated Value}}");
+				if (!sBlank.equals(csvData))
+				{
+					try
+					{
+						fTemp = Float.parseFloat(csvData);
+						sTempString = web.textBox(sPathMain + "/web:input_text[@id='GoodsWorksTab"+csvAgency+":CalcActiveValueCol2:{{iRowIteration"+csvAgency+"}}']").getAttribute("value");
+						
+						if (sTempString != null)
+							sTempString = buildValue(sTempString);
+						
+						if (sTempString == null || fTemp != Float.parseFloat(sTempString))
+						{
+							web.textBox(sPathMain + "/web:input_text[@id='GoodsWorksTab"+csvAgency+":CalcActiveValueCol2:{{iRowIteration"+csvAgency+"}}']").setText(csvData);
+							web.window(sPathWndw).waitForPage(null);
+						}
+					}
+					catch (NumberFormatException e)
+					{
+						bWithError = true;
+					}
+				}
+				else
+				{
+					web.textBox(sPathMain + "/web:input_text[@id='GoodsWorksTab"+csvAgency+":CalcActiveValueCol2:{{iRowIteration"+csvAgency+"}}']").setText("");
+					web.window(sPathWndw).waitForPage(null);
+				}
+			}
+		}
+		endStep();
+
+		String csvPackageType = eval("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.Package Type}}");
+		beginStep("[8] Select Package Type", 0);
+		{
+			strOldPKType = web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":LotsType:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").getSelectedText();
+			sTempArray = strOldPKType; 
+
+			if (!sBlank.equals(csvPackageType) && web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":LotsType:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']/web:option[@text='"+csvPackageType+"']").exists()
+				&& (sTempArray[0] == null || !sTempArray[0].equals(csvPackageType)))
+				web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":LotsType:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").selectOptionByText(csvPackageType);
+			
+			if (sPackageType[1].equals(csvPackageType))
+				iPackageType = 1;
+			else if (sPackageType[2].equals(csvPackageType))
+				iPackageType = 2;
+		}
+		endStep();
+	
+		beginStep("[9] Input Number of Contracts");
+		{
+			csvData = eval("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.Number of Contracts}}");
+			if(!sBlank.equals(csvData))
+			{
+				try
+				{
+					iTemp = Integer.parseInt(csvData);
+					sTempString = web.textBox(sPathMain + "/web:input_text[@id='GoodsWorksTab"+csvAgency+":CalcPkgNoActiveCol:{{iRowIteration"+csvAgency+"}}']").getAttribute("value");
+						
+					if (iTemp != Integer.parseInt(sTempString))
+					{
+						web.textBox(sPathMain + "/web:input_text[@id='GoodsWorksTab"+csvAgency+":CalcPkgNoActiveCol:{{iRowIteration"+csvAgency+"}}']").setText(csvData);
+						web.window(sPathWndw).waitForPage(null);
+					}
+					
+					if (!sPackageType[0].equals(csvPackageType) && Integer.valueOf(sTempString) > Integer.valueOf(csvData))
+						bWithError = true;
+					if ((iTemp > 1 && sPackageType[0].equals(csvPackageType)) || (iTemp == 1 && sPackageType[1].equals(csvPackageType)) || iTemp < 1)
+						bWithError = true;
+					
+				}
+				catch (NumberFormatException e)
+				{
+					bWithError = true;
+				}
+			}
+			else 
+			{
+				web.textBox(sPathMain + "/web:input_text[@id='GoodsWorksTab"+csvAgency+":CalcPkgNoActiveCol:{{iRowIteration"+csvAgency+"}}']").setText("");
+				web.window(sPathWndw).waitForPage(null);
+			}
+		}
+		endStep();
+		
+		beginStep("[10] Select Procurement Method", 0);
+		{
+			csvData = eval("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.Procurement Method}}");
+			sTempArray = web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":ProcurementMethod:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").getSelectedText();
+			
+			if (!sBlank.equals(csvData) && web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":ProcurementMethod:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']/web:option[@text='"+csvData+"']").exists()
+				&& (sTempArray[0] == null || !sTempArray[0].equals(csvData)))
+			{
+				web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":ProcurementMethod:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").selectOptionByText(csvData);
+				web.window(sPathWndw).waitForPage(null);
+			}
+		}
+		endStep();
+		
+		beginStep("[11] Select Sub-Category");
+		{
+			if (web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":SubCategory:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").exists())
+			{
+				csvData = eval("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.SubCategory}}");
+				sTempArray = web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":SubCategory:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").getSelectedText();
+				
+				if (!sBlank.equals(csvData) && web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":SubCategory:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']/web:option[@text='"+csvData+"']").exists()
+					&& (sTempArray[0] == null || !sTempArray[0].equals(csvData)))
+					web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":SubCategory:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").selectOptionByText(csvData);
+			}
+		}
+		endStep();
+				
+		beginStep("[12] Select Bidding Document", 0);
+		{
+			if(web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":BiddingDocument:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").exists())
+			{
+				csvData = eval("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.Bidding Document}}");
+				sTempArray = web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":BiddingDocument:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").getSelectedText();
+				
+				if (web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":BiddingDocument:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']/web:option[@text='"+csvData+"']").exists()
+					&& (sTempArray[0] == null || !sTempArray[0].equals(csvData)))
+					web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":BiddingDocument:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").selectOptionByText(csvData);
+			}
+		}
+		endStep();
+		
+		beginStep("[13] Select Review");
+		{
+			csvData = eval("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.Review}}");
+			strOldReview = web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":ReviewType:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").getSelectedText();
+			sTempArray = strOldReview;
+			
+			if(!sBlank.equals(csvData) && web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":ReviewType:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']/web:option[@text='"+csvData+"']").exists()
+				&& (sTempArray[0] == null || !sTempArray[0].equals(csvData)))
+			{
+				web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":ReviewType:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").selectOptionByText(csvData);
+				web.window(sPathWndw).waitForPage(null);
+				
+				sTempString = "Prior";
+				if (!sTempString.equals(csvData) && iPackageType == 2)
+					iPackageType = 3;
+			}
+		}
+		endStep();
+		
+		beginStep("[14] Select Bidding Procedure", 0);
+		{
+			if (web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":BiddingProcedure:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").exists())
+			{
+				csvData = eval("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.Bidding Procedure}}");
+				sTempArray = web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":BiddingProcedure:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").getSelectedText();
+				
+				if(!sBlank.equals(csvData) && web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":BiddingProcedure:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']/web:option[@text='"+csvData+"']").exists()
+					&& (sTempArray[0] == null || !sTempArray[0].equals(csvData)))
+					web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":BiddingProcedure:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").selectOptionByText(csvData);
+			}
+		}
+		endStep();
+		
+		beginStep("[15] Select Prequalifications of Bidder");
+		{
+			if (web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":Prequalifications:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").exists())
+			{
+				csvData = eval("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.Prequalifications of Bidders}}");
+				sTempArray = web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":Prequalifications:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").getSelectedText();
+				
+				if(!sBlank.equals(csvData) && web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":Prequalifications:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']/web:option[@text='"+csvData+"']").exists()
+					&& (sTempArray[0] == null || !sTempArray[0].equals(csvData)))
+					web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":Prequalifications:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").selectOptionByText(csvData);
+			}
+		}
+		endStep();
+		
+		beginStep("[16] Select Advertisement Quarter");
+		{
+			csvData = eval("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.Advertisement Quarter}}");
+			sTempArray = web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":AdvertisementQuarter23:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").getSelectedText();
+			
+			if(!sBlank.equals(csvData) && web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":AdvertisementQuarter23:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']/web:option[@text='"+csvData+"']").exists()
+				&& (sTempArray[0] == null || !sTempArray[0].equals(csvData)))
+				web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":AdvertisementQuarter23:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").selectOptionByText(csvData);
+		}
+		endStep();
+		
+		beginStep("[17] Select Advertisement Year");
+		{
+			csvData = eval("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.Advertisement Year}}");
+			sTempArray = web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":AdvertisementYear23:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").getSelectedText();
+			
+			if(!sBlank.equals(csvData) && web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":AdvertisementYear23:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']/web:option[@text='"+csvData+"']").exists()
+				&& (sTempArray[0] == null || !sTempArray[0].equals(csvData)))
+				web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":AdvertisementYear23:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").selectOptionByText(csvData);					
+		}
+		endStep();
+		
+		beginStep("[18] Domestic Preference Applicable");
+		{
+			if (web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":Domestic:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").exists())
+			{
+				csvData = eval("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.Domestic Preference Applicable}}");
+				sTempArray = web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":Domestic:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").getSelectedText();
+				
+				if (web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":Domestic:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']/web:option[@text='"+csvData+"']").exists()
+					&& (sTempArray[0] == null || !sTempArray[0].equals(csvData)))
+					web.selectBox(sPathMain + "/web:select[(@id='GoodsWorksTab"+csvAgency+":Domestic:{{iRowIteration"+csvAgency+"}}') and multiple mod 'False']").selectOptionByText(csvData);
+			}
+		}
+		endStep();
+		
+		beginStep("[19] Tick Advanced Contracting");
+		{
+			if (web.checkBox(sPathMain + "/web:input_checkbox[@id='GoodsWorksTab"+csvAgency+":AdvContracting:{{iRowIteration"+csvAgency+"}}']").exists())
+			{
+				csvData = eval("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.Advance Contracting}}");
+				sTempString = web.checkBox(sPathMain + "/web:input_checkbox[@id='GoodsWorksTab"+csvAgency+":AdvContracting:{{iRowIteration"+csvAgency+"}}']").getAttribute("CHECKED");
+				String[] strYesOrNo = {"Yes", "No"};
+				String[] strTrueOrFalse = {"True", "False"};
+				
+				if (csvData.equalsIgnoreCase(strYesOrNo[0]) && sTempString.equalsIgnoreCase(strTrueOrFalse[1]))
+					web.checkBox(sPathMain + "/web:input_checkbox[@id='GoodsWorksTab"+csvAgency+":AdvContracting:{{iRowIteration"+csvAgency+"}}']").check(true);
+				else if (csvData.equalsIgnoreCase(strYesOrNo[1]) && sTempString.equalsIgnoreCase(strTrueOrFalse[0]))
+					web.checkBox(sPathMain + "/web:input_checkbox[@id='GoodsWorksTab"+csvAgency+":AdvContracting:{{iRowIteration"+csvAgency+"}}']").check(false);
+			}
+		}
+		endStep();
+		
+		beginStep("[20] Comments");
+		{
+			csvData = eval("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.Comments}}");
+			sTempString = web.textBox(sPathMain + "/web:input_text[@id='GoodsWorksTab"+csvAgency+":Comments:{{iRowIteration"+csvAgency+"}}']").getAttribute("value");
+			
+			if ((sTempString == null && !sBlank.equals(csvData)) || (sTempString != null && !sTempString.equals(csvData)))  
+				web.textBox(sPathMain + "/web:input_text[@id='GoodsWorksTab"+csvAgency+":Comments:{{iRowIteration"+csvAgency+"}}']").setText(csvData);
+		}
+		endStep();
+		
+		beginStep("[21] Save Package Level Record");
+		{
+			web.button(sPathMain + "/web:button[@id='SaveBtn']").click();
+			web.window(sPathWndw).waitForPage(null);
+		}
+		endStep();
+
+		beginStep("[22] Check for Errors");
+		{
+			if (web.element(sPathWndwDocu + "/web:h1[@text='Error']").exists())
+			{
+				if (web.element(sPathWndwDocu + "/web:span[@text='Package Number is required.']").exists()
+					|| web.element(sPathWndwDocu + "/web:span[@text='Type is required.']").exists()
+					|| web.element(sPathWndwDocu + "/web:span[@text='General Description is required.']").exists()
+					|| web.element(sPathWndwDocu + "/web:span[@text='Estimated Value (USD) is required.']").exists()
+					|| web.element(sPathWndwDocu + "/web:span[@text='Procurement Method is required.']").exists()
+					|| web.element(sPathWndwDocu + "/web:span[@text='Quarter is required.']").exists()
+					|| web.element(sPathWndwDocu + "/web:span[@text='Year is required.']").exists()
+					|| web.element(sPathWndwDocu + "/web:span[@text='Sub-Category is required.']").exists()
+					|| web.element(sPathWndwDocu + "/web:span[@text='Bidding Procedure is required.']").exists()
+					|| web.element(sPathWndwDocu + "/web:span[@text='Prequalification of Bidders is required.']").exists()
+					|| web.element(sPathWndwDocu + "/web:span[@text='Adding of lots is not allowed for Procurement Method SHOPPING']").exists()
+					|| web.element(sPathWndwDocu + "/web:span[@text='If Package Type is Single Package, the Number of Contracts should be equal to 1.']").exists()
+					|| web.element(sPathWndwDocu + "/web:span[@text='The entered Estimated Value (USD) should be less than $1,000,000.']").exists()
+					|| web.element(sPathWndwDocu + "/web:span[@text='The entered Advertisement Date should not exceed 18 months from Date of This Procurement Plan.']").exists()
+					|| web.element(sPathWndwDocu + "/web:span[@text='The entered Estimated Value of each contract should be less than $100,000.']").exists())
+					bWithError = true;
+				
+				if (bWithError)
+				{
+					web.button(sPathMain + "/web:button[@id='RevertBtn']").click();
+					web.window(sPathWndw).waitForPage(null);
+				}
+			}
+			
+			if (sAction[1].equalsIgnoreCase(csvAction) && !bWithError && sPackageType[0].equals(csvPackageType) && !sPackageType[0].equals(strOldPKType[0]))
+			{
+				csvData = eval("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.Estimated Value}}");
+				
+				try
+				{
+					fTemp = Float.parseFloat(csvData);
+					sTempString = buildValue(web.textBox(sPathMain + "/web:input_text[@id='GoodsWorksTab"+csvAgency+":CalcActiveValueCol2:{{iRowIteration"+csvAgency+"}}']").getAttribute("value"));
+					
+					if (fTemp != Float.parseFloat(sTempString))
+					{
+						web.textBox(sPathMain + "/web:input_text[@id='GoodsWorksTab"+csvAgency+":CalcActiveValueCol2:{{iRowIteration"+csvAgency+"}}']").setText(csvData);
+						web.window(sPathWndw).waitForPage(null);
+						
+						web.button(sPathMain + "/web:button[@id='SaveBtn']").click();
+						web.window(sPathWndw).waitForPage(null);
+					}
+				}
+				catch (NumberFormatException e)
+				{
+					web.button(sPathMain + "/web:button[@id='RevertBtn']").click();
+					web.window(sPathWndw).waitForPage(null);
+				}
+			}
+			else if (sAction[0].equalsIgnoreCase(csvAction) && !bWithError)
+			{
+				sTempString = eval("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.Package Number}}");
+				getVariables().set("findPackage", sTempString, Variables.Scope.GLOBAL);
+				Boolean bErrorFree = false;
+
+				do
+				{
+					if (web.element(sPathWndwDocu + "/web:span[@text='Package Number already exists.']").exists())
+					{
+						web.textBox(sPathMain + "/web:input_text[@id='GoodsWorksTab"+csvAgency+":UserPackageNumber:{{iRowIteration"+csvAgency+"}}']").setText(sTempString + " {{@random(0,10000)}}");
+						sTempString = web.textBox(sPathMain + "/web:input_text[@id='GoodsWorksTab"+csvAgency+":UserPackageNumber:{{iRowIteration"+csvAgency+"}}']").getAttribute("value");
+						getVariables().set("findPackage", sTempString, Variables.Scope.GLOBAL);
+						
+						web.button(sPathMain + "/web:button[@id='SaveBtn']").click();
+						web.window(sPathWndw).waitForPage(null);
+					}
+					else bErrorFree = true;
+				}while(!bErrorFree);
+			}
+		}
+		endStep();
+		
+		beginStep("[23] Supply Response to Warning (if needed)");
+		{
+			if (!bWithError && web.element(sPathMain + "/web:input_text[@id='GoodsWorksTab"+csvAgency+":ResponseToWarning:{{iRowIteration"+csvAgency+"}}']").exists())
+			{
+				sTempString = web.textBox(sPathMain + "/web:input_text[@id='GoodsWorksTab"+csvAgency+":UserPackageNumber:{{iRowIteration"+csvAgency+"}}']").getAttribute("value");
+				csvData = eval("{{findPackage}}");
+				
+				if(sTempString.equals(csvData))
+				{
+					web.textBox(sPathMain + "/web:input_text[@id='GoodsWorksTab"+csvAgency+":ResponseToWarning:{{iRowIteration"+csvAgency+"}}']").setText(csvData + " R2W");
+
+					web.button(sPathMain + "/web:button[@id='SaveBtn']").click();
+					web.window(sPathWndw).waitForPage(null);
+				}
+			}
+		}
+		endStep();
+
+		beginStep("[24] Fill-up Details page (if needed)");
+		{
+			sTempString = "Combined Contracts";
+			csvData = eval("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.Review}}");
+			boolean bDontUpdate = false;
+			
+			if (sAction[1].equalsIgnoreCase(csvAction) && sTempString.equals(strOldPKType[0]) && strOldReview[0].equals(csvData))
+				bDontUpdate = true;
+			
+			// Not for Single Package, with no Errors, Not for CC-Prior and with Package Type change to CC-Post
+			if (!sPackageType[0].equals(csvPackageType) && !bWithError && iPackageType != 2 && !bDontUpdate)
+			{
+				if (sAction[0].equalsIgnoreCase(csvAction))
+					findPackage(csvAction, csvAgency);
+				
+				beginStep("[241] Go to Details", 0);
+				{
+					web.image(sPathWndwDocu + "/web:a[@id='GoodsWorksTab"+csvAgency+":DetailsEnabled:{{iRowIteration"+csvAgency+"}}']/web:img[@alt='Details']").click();
+					web.window(sPathWndw).waitForPage(null);
+				}
+				endStep();
+				
+				beginStep("[242] Input Details of the Package", 0);
+				{
+					if (iPackageType == 1)
+					{
+						sTempString = eval("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.Number of Contracts}}");
+						iTemp = 0;
+						iTempIterationB = 0;
+						
+						for(iTempIterationA = 0; iTempIterationA < Integer.parseInt(sTempString); iTempIterationA++)
+						{
+							if (iTempIterationA != 0 && iTempIterationA%10 == 0)
+							{
+								web.selectBox(sPathDLvl + "/web:select[(@title='Select record set') and multiple mod 'False']").selectOptionByIndex(iTempIterationA / 10);
+								web.window(sPathWndw).waitForPage(null);
+							}
+							
+							web.textBox(sPathDLvl + "/web:input_text[@id='advTblLots:LotDescription:"+String.valueOf(iTempIterationB)+"']").setText("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.Package Number}}" + " " + String.valueOf(iTempIterationA + 1));
+							
+							if (iTempIterationB != 9)
+								iTempIterationB++;
+							else if (iTempIterationB == 9)
+								iTempIterationB = 0;
+						}
+					}
+					else if (iPackageType == 3)
+					{
+						String csvDividend = eval("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.Estimated Value}}");
+						String[] strContracts = new String[2];
+						
+						StringBuilder sbDecimal = new StringBuilder();
+						int untilThree = 0;
+						boolean startAppend = false;
+						
+						for (int x = 0; x < csvDividend.length() && untilThree != 3; x++)
+						{
+							if (csvDividend.charAt(x) == '.')
+								startAppend = true;
+							
+							if (startAppend)
+							{
+								sbDecimal.append(csvDividend.charAt(x));
+								untilThree++;
+							}
+						}
+
+						String finalDecimal = sbDecimal.toString();
+						if (finalDecimal.equals(""))
+							finalDecimal = ".00";
+						
+						int minus = (int) (Float.parseFloat(csvDividend) - Float.parseFloat(finalDecimal));
+						strContracts[0] = String.valueOf(minus / 2);
+						String strModulo = String.valueOf(minus % 2);
+											
+						StringBuilder sbContract = new StringBuilder();
+						if (strModulo.equals("1"))
+						{
+							int iAddOne = Integer.parseInt(strContracts[0]);
+							iAddOne += 1;
+							sbContract.append(iAddOne);
+							sbContract.append(finalDecimal);
+						}
+						else
+						{
+							sbContract.append(strContracts[0]);
+							sbContract.append(finalDecimal);
+						}
+						strContracts[1] = sbContract.toString(); 
+						
+						for(int i = 0; i < 2; i++)
+						{
+							web.button(sPathDtlsDocu + "/web:form[@id='DefaultFormName' or @name='DefaultFormName' or @index='0']/web:button[@id='AddBtn']").click();
+							web.window(sPathDtls).waitForPage(null);
+	
+							web.textBox(sPathDLvl + "/web:input_text[@id='advTblLots:ContractDescription:"+String.valueOf(i)+"']").setText("{{db.C05_PRS_FT_SmallerValueContractsGW_Databank.Package Number}}" + " " + String.valueOf(i + 1));
+							web.textBox(sPathDLvl + "/web:input_text[@id='advTblLots:ContractEstValue:"+String.valueOf(i)+"']").setText(String.valueOf(strContracts[i]));
+							web.textBox(sPathDLvl + "/web:input_text[@id='advTblLots:NoOfContracts:"+String.valueOf(i)+"']").setText(String.valueOf(((minus/2)/100000)+1));
+						}
+					}
+					
+					web.button(sPathDLvl + "/web:button[@id='SaveBtn']").click();
+					web.window(sPathWndw).waitForPage(null);
+				}
+				endStep();
+				
+				beginStep("[243] Go back to Package Level", 0);
+				{
+					web.link(sPathDtlsDocu + "/web:a[@text='Return to Smaller Value Contracts']").click();
+					web.window(sPathWndw).waitForPage(null);
+				}
+				endStep();
+				
+				beginStep("[244] Re-save Record", 0);
+				{
+					web.button(sPathMain + "/web:button[@id='SaveBtn']").click();
+					web.window(sPathWndw).waitForPage(null);
+				}
+				endStep();
+			}
+		}
+		endStep();
+		
+		if (sAction[0].equalsIgnoreCase(csvAction))
+		{
+			if (!bWithError) 
+			{
+				if (!sTempIteration.equals(""))
+					iTemp = Integer.parseInt(sTempIteration) + 1;
+				else iTemp = Integer.parseInt(eval("{{iRowIteration"+csvAgency+"}}")) + 1;
+				
+				if (iTemp < 10)
+					sTempString = String.valueOf(iTemp);
+				else sTempString = String.valueOf(0);
+	
+				getVariables().set("iRowIteration"+csvAgency, sTempString, Variables.Scope.GLOBAL);
+			}
+		}
+		else if (sAction[1].equalsIgnoreCase(csvAction))
+		{	
+			getVariables().set("iRowIteration"+csvAgency, sTempIteration, Variables.Scope.GLOBAL);
+		}
+	}
+
+	public void deletePackage(String csvAgency) throws Exception
+	{
+		beginStep("[4] Delete Package");
+		{
+			web.image(sPathWndwDocu + "/web:a[@id='GoodsWorksTab"+csvAgency+":DeleteEnabled:{{iRowIteration"+csvAgency+"}}']/web:img[@alt='Delete']").click();
+			web.window(sPathWarn).waitForPage(null);
+			web.button(sPathWarnDocu + "/web:button[@title='Yes']").click();
+			web.window(sPathWndw).waitForPage(null);
+			web.button(sPathMain + "/web:button[@id='SaveBtn']").click();
+			web.window(sPathWndw).waitForPage(null);
+		}
+		endStep();
+			
+		iTemp = Integer.parseInt(sTempIteration) - 1;
+		
+		if (iTemp >= 0)
+			sTempString = String.valueOf(iTemp);
+		else sTempString = String.valueOf(0);
+
+		getVariables().set("iRowIteration"+csvAgency, sTempString, Variables.Scope.GLOBAL);
+	}
+	
+	public void findPackage(String csvAction, String csvAgency) throws Exception
+	{
+		iTempIterationA = 1;
+		Boolean bUntilExists = true;
+		
+		do
+		{
+			for(iTempIterationB = 0; bUntilExists && iTempIterationB < 10; iTempIterationB++)
+			{
+				String strFindPackage = eval("{{findPackage}}");
+				
+				if (!web.textBox(sPathMain + "/web:input_text[@id='GoodsWorksTab"+csvAgency+":UserPackageNumber:"+String.valueOf(iTempIterationB)+"']").exists())
+					bUntilExists = false;
+				
+				if (bUntilExists && strFindPackage.equals(web.textBox(sPathMain + "/web:input_text[@id='GoodsWorksTab"+csvAgency+":UserPackageNumber:"+String.valueOf(iTempIterationB)+"']").getAttribute("value")))
+				{
+					sTempIteration = eval("{{iRowIteration"+csvAgency+"}}");
+					
+					getVariables().set("iRowIteration"+csvAgency, String.valueOf(iTempIterationB), Variables.Scope.GLOBAL);
+					bUntilExists = false;
+				}
+			}
+
+			if (bUntilExists)
+			{
+				if (web.selectBox(sPathMain + "/web:table[@id='GoodsWorksTab"+csvAgency+"-nb']/web:select[(@title='Select record set') and multiple mod 'False']/web:option[@optionIndex='"+String.valueOf(iTempIterationA)+"']").exists())
+				{
+					web.selectBox(sPathMain + "/web:table[@id='GoodsWorksTab"+csvAgency+"-nb']/web:select[(@title='Select record set') and multiple mod 'False']").selectOptionByIndex(iTempIterationA);
+					web.window(sPathWndw).waitForPage(null);
+					iTempIterationA++;
+				}
+				else bUntilExists = false;
+			}
+
+		}while(bUntilExists);
+	}
+	
+	public String buildValue(String strValue) throws Exception
+	{
+		StringBuilder sbValue = new StringBuilder();
+		
+		for (int n = 0; n < strValue.length(); n++)
+		{
+			if (strValue.charAt(n) != ',')
+				sbValue.append(strValue.charAt(n));
+		}
+
+		return sbValue.toString();
+	}
+	
+	public void finish() throws Exception {}
+}
